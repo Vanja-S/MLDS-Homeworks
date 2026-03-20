@@ -68,7 +68,8 @@ Submit a report in a single .pdf file (max two pages). Structure it so your assi
 For this HW, I got an 8- (TA's way of grading). There were two major and one minor problem with the HW:
 
 1. I forgot to include tests into the main `hw_tree.py` file when turning in the assignment.
-   a. Although I tested the gini method and split method, the tests were not deep enough → multicolumn split.
+
+    a. Although I tested the gini method and split method, the tests were not deep enough → multicolumn split.
 
 2. The importance function was correct and mathematically sound, but the report I turned in didn't correctly display the graph or the usage (the comparison) it should've shown a comparison between two methods (to some baseline) using the importance function.
 3. The BetterTree approached were valid, but yielded almost zero improvemnt -> I did get extra points for this, but not enought to counter the previous two problems.
