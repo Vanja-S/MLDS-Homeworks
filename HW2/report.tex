@@ -1,0 +1,81 @@
+\documentclass[10pt, a4paper]{article}
+
+\usepackage{geometry}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{booktabs}
+
+\title{\textbf{HW2 - Model Evaluation}}
+\author{Vanja Stojanovi\'c}
+\date{March 2026}
+
+\begin{document}
+\maketitle
+
+\section{Predicting \texttt{ShotType}}
+
+We predict \texttt{ShotType} (6 classes) using all other variables from the basketball shot dataset (5024 samples, 12 features after one-hot encoding categorical variables with \texttt{drop="first"}).
+
+We compare four models using 10-fold cross-validation with accuracy and log-score:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lcc}
+\toprule
+Model & Accuracy & Log-score \\
+\midrule
+Baseline (prior) & $0.608 \pm 0.021$ & $-1.166 \pm 0.043$ \\
+Logistic Regression & $0.738 \pm 0.023$ & $-0.673 \pm 0.044$ \\
+RF -- train fold tuning & $0.756 \pm 0.019$ & $-0.892 \pm 0.107$ \\
+RF -- nested CV tuning & $0.760 \pm 0.024$ & $-0.623 \pm 0.041$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+For Random Forest we tuned \texttt{max\_depth} $\in \{2, 5, 10, 20, 50, \text{None}\}$. Train fold tuning selected depth 20 in all folds, while nested CV (5 inner folds) selected depth 10 in all folds.
+
+Train fold tuning optimizes on the data the model was trained on, which favors deeper, more complex trees that memorize training data. This yields competitive accuracy but poor log-score ($-0.89$), as overfit trees produce overconfident probabilities that are heavily penalized when wrong. Nested CV selects a more moderate depth by evaluating on held-out inner folds, resulting in both the best accuracy and log-score of all models.
+
+The log-score difference is particularly notable: the train-fold-tuned RF performs worse than logistic regression on log-score despite better accuracy, showing that a model can classify well on average while producing poorly calibrated probabilities. Nested CV resolves this by preventing overfitting during hyperparameter selection.
+
+\section{Error dependence on Angle}
+
+To investigate whether prediction error depends on \texttt{Angle}, we bin the per-sample CV predictions into 5 equal-width angle ranges and compute the error rate per bin.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lccccc}
+\toprule
+Model & [0, 18) & [18, 36) & [36, 54) & [54, 72) & [72, 90] \\
+\midrule
+Baseline      & 0.359 & 0.311 & 0.406 & 0.522 & 0.328 \\
+Logistic Reg. & 0.300 & 0.230 & 0.252 & 0.295 & 0.225 \\
+RF -- train   & 0.284 & 0.189 & 0.236 & 0.292 & 0.210 \\
+RF -- nested  & 0.281 & 0.193 & 0.228 & 0.279 & 0.212 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Error rate varies across angle bins for all models, confirming that error depends on Angle. The mid-range angles (54--72\textdegree) consistently show the highest error rates, while extreme angles (low and high) are easier to classify. This pattern holds across all models, including the baseline, which suggests the class overlap in the data itself is angle-dependent, some shot types are harder to distinguish at certain angles.
+
+\section{Reweighted Competition frequencies}
+
+The dataset has approximately equal representation across Competition types, but the true distribution is 60\% NBA and 10\% each for the others. Rather than retraining, we reweight the per-sample CV errors using importance weights: $w_i = p_{\text{true}}(c_i) / p_{\text{data}}(c_i)$ for each sample's Competition type. NBA samples are upweighted ($\approx 2.4\times$), others downweighted ($\approx 0.4\times$).
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lcc}
+\toprule
+Model & Weighted Accuracy & Weighted Log-score \\
+\midrule
+Baseline        & 0.630 & $-1.134$ \\
+Logistic Reg.   & 0.756 & $-0.656$ \\
+RF -- train     & 0.754 & $-0.896$ \\
+RF -- nested    & 0.768 & $-0.619$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+All models improve slightly under the true distribution, indicating that models perform somewhat better on NBA data (which is now dominant). The relative ranking of models remains unchanged, and nested CV RF remains the best on both metrics.
+
+\end{document}
