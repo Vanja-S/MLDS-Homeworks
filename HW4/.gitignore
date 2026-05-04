@@ -1,0 +1,4 @@
+*.tab
+*.png
+theory/*
+predict_lr.ipynb

@@ -1,0 +1,172 @@
+\documentclass[10pt, a4paper]{article}
+
+\usepackage{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+
+\title{\textbf{HW4 - Neural Networks}}
+\author{Vanja Stojanovi\'c}
+\date{May 2026}
+
+\begin{document}
+\maketitle
+
+\section{\texttt{ANNClassification}}
+
+A multi-layer fully-connected ANN with analytically derived gradients. The unit is \texttt{ANNLayer} (weight matrix \(W\), bias \(b\), pluggable activation pair \((f, f')\)). Forward caches \(A_{prev}, Z = A_{prev} W + b, A = f(Z)\); backward computes \(dZ = dA \odot f'(A, Z)\), \(dW = A_{prev}^\top dZ\), \(db = \sum dZ\), and pushes \(dA_{prev} = dZ W^\top\) upstream. Hidden layers use sigmoid. The output layer is softmax, but the gradient enters through \texttt{backward\_from\_dZ} with \(dZ = (P - Y_{onehot})/n\): softmax + cross-entropy collapses to the canonical-link residual, the same identity as \(\hat{y} - y\) (OLS) and \(p - y\) (logistic). Optimization is full-batch gradient descent.
+
+\subsection{Smallest networks for doughnut and squares}
+
+For each candidate architecture we trained 5 random initializations for 5000 epochs at \(lr = 0.5\) and counted seeds that reached perfect training accuracy (Tables~\ref{tab:doughnut}, \ref{tab:squares}).
+
+\begin{table}[h]
+\centering
+\caption{doughnut.tab; reliable success at 5/5 seeds.}
+\label{tab:doughnut}
+\begin{tabular}{lcccc}
+\toprule
+units & best acc & mean acc & success & params \\
+\midrule
+\texttt{[]}      & 0.384 & 0.384 & 0/5 & 6 \\
+\texttt{[2]}     & 0.903 & 0.902 & 0/5 & 12 \\
+\textbf{\texttt{[3]}} & \textbf{1.000} & \textbf{1.000} & \textbf{5/5} & \textbf{17} \\
+\texttt{[4, 2]}  & 1.000 & 1.000 & 5/5 & 28 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{squares.tab; reliable success at 5/5 seeds.}
+\label{tab:squares}
+\begin{tabular}{lcccc}
+\toprule
+units & best acc & mean acc & success & params \\
+\midrule
+\texttt{[]}      & 0.628 & 0.628 & 0/5 & 6 \\
+\texttt{[4]}     & 1.000 & 0.994 & 3/5 & 22 \\
+\texttt{[10]}    & 1.000 & 1.000 & 5/5 & 52 \\
+\textbf{\texttt{[4, 2]}} & \textbf{1.000} & \textbf{1.000} & \textbf{5/5} & \textbf{28} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Doughnut}: \texttt{[3]} (17 parameters) suffices. Three sigmoid half-planes are enough for the output layer to compose into a closed circular-ish boundary; \texttt{[2]} caps at 90\%. \textbf{Squares}: \texttt{[4, 2]} (28 parameters) is the smallest reliable architecture, beating single-layer \texttt{[10]} (52). The extra layer lets the network compose features for disjoint rectangle regions, which a single hidden layer struggles to capture from random init. \textbf{No-hidden} (\texttt{[]}) is multinomial logistic regression and cannot represent either non-linear boundary; both stay below 70\%.
+
+\subsection{Why standardization and gradient \(/n\)}
+
+Both are needed for a single \(lr\) to converge across datasets of different scale and size. Doughnut, \texttt{[8]}, \(lr=0.5\), 3 seeds (Table~\ref{tab:ablation}).
+
+\begin{table}[h]
+\centering
+\caption{Ablation: standardization (std) and division of gradient by \(n\) (/n).}
+\label{tab:ablation}
+\begin{tabular}{lccl}
+\toprule
+config & mean acc & final loss & failure mode \\
+\midrule
+std=ON, /n=ON   & 1.000 & 0.004  & (baseline) \\
+std=OFF, /n=ON  & 1.000 & 0.021  & sigmoid saturates on raw inputs \\
+std=ON, /n=OFF  & 0.667 & 4.59   & step \(\sim n\times\) too large; oscillates \\
+std=OFF, /n=OFF & 0.477 & 13.17  & both compounded \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Standardization} (\(\tilde X = (X - \mu)/\sigma\)) keeps first-layer pre-activations in sigmoid's non-saturated range; without it, \(|Z|\) grows with input scale, the derivative \(\sigma(z)(1-\sigma(z))\) collapses, and gradients vanish. \textbf{Gradient \(/n\)} matches the mean-loss convention: without it, \(dW\) sums contributions from all \(n\) samples, so an \(lr\) tuned for \(n=4\) is roughly \(n\)-times too aggressive at \(n=216\). The two fixes target different points in the pipeline (forward saturation vs. update step size) and their failure modes are independent.
+
+\subsection{Learning-rate tuning per dataset}
+
+We swept \(lr \in [0.01, 5.0]\) on each dataset's smallest reliable architecture, 5000 epochs, seed 0, and report the first epoch where the loss drops below 0.01 as a proxy for convergence speed (Table~\ref{tab:lr}).
+
+\begin{table}[h]
+\centering
+\caption{Learning-rate sweep on the smallest reliable architecture per dataset.}
+\label{tab:lr}
+\begin{tabular}{lcccccccc}
+\toprule
+& \(lr\) & 0.01 & 0.05 & 0.1 & 0.5 & 1.0 & 2.0 & 5.0 \\
+\midrule
+\multirow{3}{*}{doughnut, \texttt{[3]}}
+& final loss      & 0.645 & 0.082 & 0.034 & 0.005 & 0.003 & 0.001 & 0.0006 \\
+& acc             & 0.773 & 1.000 & 1.000 & 1.000 & 1.000 & 1.000 & 1.000 \\
+& epoch loss\(<\)0.01 & n/a   & n/a   & n/a   & 2761  & 1381  & 690   & \textbf{273} \\
+\midrule
+\multirow{3}{*}{squares, \texttt{[4, 2]}}
+& final loss      & 0.693 & 0.688 & 0.423 & 0.005 & 0.002 & 0.001 & 0.0004 \\
+& acc             & 0.515 & 0.705 & 0.873 & 1.000 & 1.000 & 1.000 & 1.000 \\
+& epoch loss\(<\)0.01 & n/a   & n/a   & n/a   & 3328  & 1667  & \textbf{904}   & 1720 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Doughnut} tolerates a wide \(lr\) range. Anything in \([0.05, 5.0]\) reaches 100\% accuracy. Higher \(lr\) is monotonically faster: \(lr=5.0\) hits loss \(<\) 0.01 in 273 epochs, ten times faster than \(lr=0.5\), with no upper-end instability.
+
+\textbf{Squares} is more demanding. \(lr \in [0.01, 0.1]\) does not even reach 100\% accuracy in 5000 epochs, and the convergence-speed curve is non-monotonic: \(lr=2.0\) is fastest (904 epochs), while \(lr=5.0\) is almost twice as slow because the higher step starts overshooting.
+
+This is consistent with the loss-landscape difference between the two problems. Doughnut has a simple closed boundary; the loss surface is well-conditioned and large steps remain in productive directions. Squares requires composing several disjoint regions; the surface has narrower valleys, so step sizes that suit doughnut can overshoot here. \textbf{Per-dataset recommendation}: \(lr=2.0\) is the best single choice that works for both; if tuning per dataset, doughnut prefers \(lr=5.0\) and squares \(lr=2.0\). We keep \(lr=0.5\) as the conservative library default and surface \texttt{epochs} and \texttt{lr} as instance attributes for callers to override.
+
+\section{PyTorch clone}
+
+We re-implement the same architecture in PyTorch (\texttt{ANNClassificationTorch}, same file). Both clones share: sigmoid hidden layers, linear output with softmax folded into the loss, plain SGD, full-batch updates, mean cross-entropy, identical Xavier-style init \(\mathcal{N}(0, 1/\sqrt{d_{in}})\) seeded from numpy, and the same input standardization. The difference is that PyTorch builds an autograd graph and computes gradients automatically, whereas ours derives them analytically and stores per-layer \(dW, db\).
+
+\begin{table}[h]
+\centering
+\caption{Side-by-side, matched seeds and hyperparameters, 2000 epochs.}
+\label{tab:torch}
+\begin{tabular}{llcccc}
+\toprule
+dataset & impl & time (s) & final loss & acc & agreement \\
+\midrule
+\multirow{2}{*}{doughnut, \texttt{[3]}, \(lr=0.5\)}
+& ours    & 0.069 & 0.0146 & 1.000 & \multirow{2}{*}{\(\max|\Delta P|=4\!\cdot\!10^{-7}\)} \\
+& pytorch & 1.043 & 0.0146 & 1.000 & \\
+\midrule
+\multirow{2}{*}{squares, \texttt{[4, 2]}, \(lr=1.0\)}
+& ours    & 0.125 & 0.0072 & 1.000 & \multirow{2}{*}{\(\max|\Delta P|=9\!\cdot\!10^{-7}\)} \\
+& pytorch & 0.439 & 0.0072 & 1.000 & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Numerical agreement.} Final loss matches to 4 decimals on both datasets. Per-sample probability differences peak at \(\sim 10^{-6}\) and the loss curves agree pointwise to \(\sim 10^{-7}\). The remaining gap is dominated by float32 (PyTorch's default) versus float64 (ours), plus accumulator-order differences inside torch's matmul. With matched init and matched optimizer, the two trajectories are otherwise the same algorithm.
+
+\textbf{Speed.} Ours is faster on these tiny networks (\(\approx 15\times\) on doughnut, \(\approx 3.5\times\) on squares). The reason is per-operation Python overhead: PyTorch builds an autograd graph and dispatches to its kernels for every matmul and activation, which dominates when each call only operates on a few hundred floats. Our numpy code does the same handful of matrix multiplies with no graph bookkeeping. The advantage would invert at much larger sizes where the matmuls themselves dominate (and even more so on GPU, which we did not exercise).
+
+\textbf{Implementation cost.} The PyTorch version is shorter: no \texttt{backward}, no \texttt{backward\_from\_dZ} shortcut, no manual chain-rule bookkeeping. The model is built by stacking \texttt{nn.Linear} and \texttt{nn.Sigmoid} into \texttt{nn.Sequential}; \texttt{loss.backward()} fills every parameter's \texttt{.grad}, and \texttt{optimizer.step()} applies the update. Cross-entropy and softmax are merged in \texttt{nn.CrossEntropyLoss}, which gives the same numerically stable and analytically clean \(\partial L/\partial Z = (P - Y_{onehot})/n\) we derived by hand. In practice that means: the things we had to think carefully about (the softmax+CE combine, the \(/n\) normalization, the saturation-aware init) are exactly what the framework already does.
+
+\textbf{Conclusion.} The two implementations are equivalent in result but trade speed for code clarity in opposite directions: ours is faster but requires the analytical derivation; PyTorch is slower for small models but offloads the math to a generic engine. For an assignment that asks for analytically derived gradients, the numpy version is the right vehicle and the agreement to \(10^{-6}\) is independent confirmation that our backward pass is correct.
+
+\subsection{Extensions}
+
+We extend the numpy implementation with three orthogonal features. All share the same \texttt{ANNLayer} primitive and the same training loop; the diff per feature is small.
+
+\textbf{Regression (\texttt{ANNRegression})}. The output layer is a single \texttt{LINEAR} unit, the loss is mean squared error, and \(\partial L / \partial Z_{out} = 2(\hat y - y)/n\), the Gaussian-target counterpart of the categorical residual \((P - Y_{onehot})/n\) (same canonical-link GLM identity). The forward pass, the per-layer backward, the standardization, and the optimizer are identical to classification. \texttt{predict} squeezes the trailing axis to \((n,)\). All five \texttt{ANNRegression} test cases pass without further tuning; the same \(lr=0.5\), \(\text{epochs}=5000\) defaults work.
+
+\textbf{Per-layer activations}. The constructor accepts \texttt{activations}: a list of strings (\texttt{"sigmoid"}, \texttt{"relu"}, \texttt{"linear"}) or \((f, f')\) tuples, one per hidden layer. The output activation is task-determined (softmax for classification, linear for regression) and not user-overridable. ReLU on \texttt{units=[3]} on doughnut beats sigmoid by \(4\times\) in convergence speed: ReLU reaches loss \(<0.05\) at epoch 173 vs.\ epoch 728 for sigmoid, with final loss roughly \(4\times\) lower as well. ReLU's gradient is exactly 1 in the active region, so it doesn't suffer the saturation flattening that bounds sigmoid's effective gradient at \(\le 0.25\).
+
+\textbf{L2 regularization}. The weight update becomes \(W \leftarrow W - lr \cdot (dW + \lambda W)\); biases are exempt (\(b \leftarrow b - lr \cdot db\)). Sweep on doughnut, \texttt{units=[10]}, 5000 epochs:
+
+\begin{table}[h]
+\centering
+\caption{Effect of \(\lambda\) on weight magnitude and fit (doughnut, \texttt{[10]}).}
+\label{tab:lambda}
+\begin{tabular}{cccccl}
+\toprule
+\(\lambda\) & final loss & acc & \(\lVert W\rVert\) & \(\lVert b\rVert\) & note \\
+\midrule
+0.000  & 0.004 & 1.000 & 26.60 & 12.27 & unconstrained, perfect fit \\
+0.001  & 0.030 & 1.000 & 17.59 & 11.79 & \(\lVert W\rVert\) -34\%, fit preserved \\
+0.010  & 0.383 & 0.898 & \phantom{0}7.97 & \phantom{0}5.11 & accuracy starts to drop \\
+0.100  & 0.692 & 0.523 & \phantom{0}0.00 & \phantom{0}0.18 & \(W\) collapses to zero \\
+1.000  & 0.692 & 0.523 & \phantom{0}0.00 & \phantom{0}0.07 & same regularizer-only fixed point \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\(\lVert W\rVert\) shrinks monotonically with \(\lambda\) as expected. \(\lVert b\rVert\) also drops, but less and indirectly: biases get no L2 penalty, the shrinkage on biases is just the gradient-flow side-effect of weights pulling activations smaller. At \(\lambda \ge 0.1\) the regularizer dominates and \(W\) collapses to zero, leaving softmax to default to its uniform output (accuracy \(\approx 1/K\)).
+
+\end{document}
