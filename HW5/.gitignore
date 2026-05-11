@@ -1,0 +1,5 @@
+*.pdf
+*.csv
+*.md
+build/*
+!build/report.pdf

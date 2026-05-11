@@ -1,0 +1,186 @@
+\documentclass[10pt, a4paper]{article}
+
+\usepackage[margin=2cm]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{subcaption}
+
+\title{\textbf{HW5 - Kernel Methods}}
+\author{Vanja Stojanovi\'c}
+\date{May 2026}
+
+\begin{document}
+\maketitle
+
+\section{Kernels on the sine data set}
+
+200 noisy observations over $x \in [0, 19.9]$: three periods of a sine of wavelength $\approx 6.3$ shifted to $\bar y \approx 1.5$. The polynomial Gram $(1{+}xx')^M$ grows like $x^{2M}$ and is ill-conditioned on raw $x$, so we standardize $x$ to zero mean unit variance before fitting (kernel formula untouched). \textbf{Selection procedure:} per parameter, swept a short grid, picked the value at which the fit visually transitioned from underfit to overfit, and sanity-checked training MSE. The noise scale used below is $\hat\sigma_{\text{noise}} \approx 0.3$, estimated from the residual std of the KRR + RBF fit. \textbf{Support vector definition:} a training point is an SV iff $|\alpha_i - \alpha_i^\ast| > 10^{-5}$; by KKT, points strictly inside the $\varepsilon$-tube have $\alpha_i = \alpha_i^\ast = 0$, and the $10^{-5}$ is a numerical tolerance against QP solver noise.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Per-parameter sweep. Picked value in \textbf{bold}.}
+\label{tab:sweep}
+\begin{tabular}{llll}
+\toprule
+parameter & value & observation \\
+\midrule
+\multirow{4}{*}{RBF $\sigma$}
+  & $1.0$           & underfits, averages across half-periods \\
+  & $\mathbf{0.5}$  & clean fit, indistinguishable from $0.25$; pick larger for stronger smoothing \\
+  & $0.25$          & visually identical to $0.5$ \\
+  & $0.1$           & tracks individual noisy samples \\
+\midrule
+\multirow{4}{*}{Poly $M$}
+  & $6$             & misses the third oscillation \\
+  & $8$             & flattens the last peak \\
+  & $\mathbf{11}$   & tracks all three oscillations \\
+  & $15$            & worsens edge blowup, no interior gain \\
+\midrule
+\multirow{3}{*}{KRR $\lambda$}
+  & $10^{-6}$       & indistinguishable from $10^{-3}$ \\
+  & $\mathbf{10^{-3}}$ & default well-conditioned regime \\
+  & $10^{-1}$       & flattens the fit \\
+\midrule
+\multirow{3}{*}{SVR $\varepsilon$}
+  & $0.2$           & $\approx 70$ SVs, no real sparsity \\
+  & $\mathbf{0.5}$  & $\approx 1.5\hat\sigma_\text{noise}$, $\sim 10$ SVs, clean fit \\
+  & $1.0$           & flattens oscillation amplitude \\
+\midrule
+\multirow{3}{*}{SVR $\lambda$}
+  & $10^{-3}$       & $C{=}1000$, poly SVR overshoots interior peaks \\
+  & $\mathbf{10^{-2}}$ & $C{=}100$, balanced \\
+  & $10^{-1}$       & $C{=}10$, flattens \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\small
+\caption{Final fit summary at picked hyperparameters. $\text{std}(y) \approx 1.07$.}
+\label{tab:sine}
+\begin{tabular}{llccrr}
+\toprule
+method & kernel & $\lambda$ & $\varepsilon$ & MSE & \#SV \\
+\midrule
+KRR & RBF        & $10^{-3}$ &     & 0.076 &     \\
+KRR & Polynomial & $10^{-3}$ &     & 0.079 &     \\
+SVR & RBF        & $10^{-2}$ & 0.5 & 0.079 & 11 / 200 \\
+SVR & Polynomial & $10^{-2}$ & 0.5 & 0.085 & 16 / 200 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[h]
+\centering
+\begin{subfigure}{0.38\textwidth}\includegraphics[width=\linewidth]{build/sine_krr_rbf.pdf}\end{subfigure}\hfill
+\begin{subfigure}{0.38\textwidth}\includegraphics[width=\linewidth]{build/sine_krr_polynomial.pdf}\end{subfigure}\\
+\begin{subfigure}{0.38\textwidth}\includegraphics[width=\linewidth]{build/sine_svr_rbf.pdf}\end{subfigure}\hfill
+\begin{subfigure}{0.38\textwidth}\includegraphics[width=\linewidth]{build/sine_svr_polynomial.pdf}\end{subfigure}
+\caption{Fits on the sine data. Top: KRR + RBF / Polynomial. Bottom: SVR + RBF / Polynomial. Support vectors are circled; the shaded band is the $\pm\varepsilon$ tube around the SVR fit.}
+\label{fig:sine}
+\end{figure}
+
+\textbf{Findings.} All four MSEs sit in $[0.076, 0.085]$, residual std $\approx 0.28 \approx \hat\sigma_\text{noise}$: at these settings every configuration is noise-saturated. SVR achieves the same fit quality as KRR with $\approx 18\times$ (RBF) and $12.5\times$ (poly) fewer prediction-time terms; the circled SVs sit at or just outside the tube boundary, the geometric signature of complementary slackness. Both polynomial fits diverge at $x \to 20$: the Runge mechanism, a degree-11 monomial basis amplifies any boundary discrepancy as $x^{11}$; RBF avoids this because every basis function decays away from its centre, so beyond the training support the prediction relaxes to the constant $b$. $\lambda$ shrinks $\alpha$ in both methods, but in SVR it additionally caps $|\alpha_i^{(\ast)}| \le C = 1/\lambda$: small $\lambda$ lets one nearby SV dominate a peak, large $\lambda$ spreads the load and smooths.
+
+\clearpage
+
+\section{Kernels on housing2r}
+
+200 observations, 5 features (Boston-housing subset), target $y$ (median home value) with $\bar y \approx 21.7$, $\text{std}(y) \approx 7.9$. Single 80/20 train/test split, fixed seed. Features are standardized using train statistics only (std ranges from $0.7$ to $166$, raw values would dominate the Gram matrix). For each kernel parameter we report two test-MSE curves: $\lambda = 1$ fixed, and $\lambda$ chosen by 5-fold CV on the train set over $\lambda \in \{10^{-3},10^{-2},10^{-1},1,10,100\}$. SVR uses a single $\varepsilon = 4.6$, set from the residual std of a probe KRR + RBF fit ($\hat\sigma_{\text{noise}} \approx 4.55$); this is $\approx 0.6\,\text{std}(y)$, narrow enough to track signal and wide enough to leave most points inside the tube.
+
+\begin{figure}[h]
+\centering
+\begin{subfigure}{0.40\textwidth}\includegraphics[width=\linewidth]{build/housing_krr_rbf.pdf}\end{subfigure}\hfill
+\begin{subfigure}{0.40\textwidth}\includegraphics[width=\linewidth]{build/housing_krr_polynomial.pdf}\end{subfigure}\\
+\begin{subfigure}{0.40\textwidth}\includegraphics[width=\linewidth]{build/housing_svr_rbf.pdf}\end{subfigure}\hfill
+\begin{subfigure}{0.40\textwidth}\includegraphics[width=\linewidth]{build/housing_svr_polynomial.pdf}\end{subfigure}
+\caption{Test MSE vs.\ kernel parameter on housing2r. Top: KRR + RBF (left, linear y) and KRR + Polynomial (right, log y). Bottom: SVR with both kernels; dashed lines show \#SV on the right axis.}
+\label{fig:housing}
+\end{figure}
+
+\begin{table}[h]
+\centering
+\small
+\caption{Best test MSE per (method, kernel). $\lambda^\ast$ is the inner-CV choice at the best kernel parameter.}
+\label{tab:housing}
+\begin{tabular}{llcrrr}
+\toprule
+method & kernel & best param & $\lambda^\ast$ & best MSE & \#SV \\
+\midrule
+KRR & RBF        & $\sigma = 10$ & $10^{-3}$ & 51.0 &      \\
+KRR & Polynomial & $M = 1$       & $10^{-2}$ & 51.5 &      \\
+SVR & RBF        & $\sigma = 10$ & $10^{-3}$ & \textbf{46.9} & 46 / 160 \\
+SVR & Polynomial & $M = 1$       & $1.0$     & 50.6 & 48 / 160 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Polynomial kernel.} KRR + Poly blows up past $M \approx 6$ (Fig.~\ref{fig:housing} top-right, log-y): on standardized inputs the Gram entries scale like $\Vert x \Vert^{2M} \sim 5^M$ in $d=5$, the matrix becomes catastrophically ill-conditioned, and $(K + \lambda I)^{-1}$ amplifies any small-eigenvalue direction. CV-$\lambda$ helps only at $M \le 6$. SVR + Poly tolerates the same $M$ much better because the box constraint $|\alpha_i^{(\ast)}| \le C$ caps the influence of any single direction. Both polynomial families peak at $M = 1$ (essentially linear ridge with a bias).
+
+\textbf{RBF kernel.} Smooth U-shape for both methods with minimum at $\sigma \in [3, 10]$. With standardized 5-D inputs, typical pairwise distances are $\sqrt{2d} \approx 3$, so $\sigma$ in the range $[3, 10]$ is the regime where the kernel sees the data globally rather than treating each point as its own cluster. Small $\sigma$ overfits, large $\sigma$ underfits.
+
+\textbf{Effect of CV-$\lambda$.} The CV curve never loses to $\lambda = 1$ and is materially better at the extremes of every sweep, where the fixed $\lambda = 1$ is either too strong (smooths out signal) or too weak (lets ill-conditioning bite). At the best $\sigma = 10$, SVR + RBF goes from MSE 74.5 to 46.9, a $37\%$ reduction. Inner CV adds negligible compute on this data set.
+
+\textbf{KRR vs.\ SVR.} Comparison axes used in the literature: (i) predictive accuracy, (ii) outlier robustness, (iii) predict-time sparsity, (iv) hyperparameter / solver complexity. Here SVR + RBF beats KRR + RBF by $\sim 8\%$ MSE at their respective optima. SVR's $\varepsilon$-insensitive loss is piecewise-linear outside the tube rather than quadratic, so a single far outlier contributes $|y-\hat y|$ rather than $(y-\hat y)^2$ to the gradient (documented robustness advantage; relevant on housing where a handful of homes have $y = 50$). SVR predicts in $O(\#\text{SV}) = 46$ vs.\ $O(n) = 160$ for KRR. KRR has one hyperparameter and a closed-form fit; SVR has two and requires a QP solver.
+
+\textbf{Preference: SVR + RBF with inner-CV $\lambda$.} It gives the best test MSE (46.9 vs.\ KRR 51.0), a $3.5\times$ sparser predictor (46 / 160), and a more robust loss against the heavy-tailed residuals in housing data. KRR is the right pick when one wants a single closed-form fit without a QP solver, accepting $\sim 8\%$ worse MSE in exchange for simpler workflow. The polynomial kernel is dominated by RBF on this data regardless of method.
+
+\clearpage
+
+\section{A non-trivial kernel for structured data}
+
+\textbf{Setup.} Strings are structured data: order and gaps matter. We compare KRR with the \emph{String Subsequence Kernel} (SSK) of Lodhi et al.\ 2002 against KRR on the strongest finite attribute tables one would naturally write down for strings. All methods share the same regressor and the same 5-fold inner CV for $\lambda$; only the feature representation differs. Data: 300 strings of length 25 over $\Sigma = \{A, C, G, T\}$, target
+$$
+y(s) = 1.0 \cdot N_{\text{ACT}}(s) - 0.5 \cdot N_{\text{GTA}}(s) + \varepsilon, \quad \varepsilon \sim \mathcal N(0, 0.3^2),
+$$
+where $N_u(s)$ counts ordered occurrences of pattern $u$ with span $\in [3, 8]$ (span 3 is contiguous, spans 4 to 8 are gapped). 80/20 train/test split, fixed seed.
+
+\textbf{Definition and why this is non-trivial.} For length $p$ and decay $\lambda_{\mathrm{decay}} \in (0, 1]$,
+$$
+\phi_u(s) = \sum_{\mathbf i\,:\,u = s[\mathbf i]} \lambda_{\mathrm{decay}}^{\,l(\mathbf i)}, \quad K_p(s, t) = \sum_{u \in \Sigma^p} \phi_u(s)\,\phi_u(t),
+$$
+with $\mathbf i = (i_1 < \dots < i_p)$ and $l(\mathbf i) = i_p - i_1 + 1$ the index-tuple span. Computed by an $O(p\,|s|\,|t|)$ DP without enumerating $\Sigma^p$.
+
+For our $|\Sigma| = 4$ and $p = 3$, the feature space has $|\Sigma|^p = 64$ coordinates; for $p = 5$ it grows to $1024$. SSK can be written as a finite table at small $p$, but each coordinate $\phi_u(s)$ is a gap-weighted DP output, not a count anyone would write down by inspection. The natural attribute representations for strings ($k$-mer counts) are strictly different from $\phi_u$ and cannot reproduce SSK regardless of regressor or regularization, since they encode no gap information.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\linewidth]{build/strings_ssk_vs_bow.pdf}
+\caption{Left: SSK test MSE across the $(p, \lambda_{\mathrm{decay}})$ grid; $\lambda$ is chosen by 5-fold inner CV at each cell. Right: all methods compared. Dashed line is the irreducible noise floor $\sigma^2 = 0.09$.}
+\label{fig:ssk}
+\end{figure}
+
+\begin{table}[h]
+\centering
+\small
+\caption{Test MSE on the synthetic string regression task. $\lambda^\ast$ chosen by 5-fold inner CV; SSK rows show the four-by-three sweep summary.}
+\label{tab:ssk}
+\begin{tabular}{llccr}
+\toprule
+class & representation & feature dim & $\lambda^\ast$ & test MSE \\
+\midrule
+trivial   & constant (predict $\bar y_{\text{train}}$)             &      &          & 37.79 \\
+table     & bag-of-3-mers + linear kernel                          & 64   & $10^{1}$ & 21.75 \\
+table     & bag-of-$k$-mers ($k=2,3,4$) concat + linear            & 336  & $10^{1}$ & 18.35 \\
+table     & bag-of-3-mers + Polynomial($M=2$)                      & 64   & $10^{1}$ & 20.35 \\
+SSK       & raw strings, worst cell in sweep ($p=2,\lambda_d=0.3$) &      & $10^{-1}$ & 19.25 \\
+SSK       & raw strings, median over the $4\times3$ sweep          &      & varies   & 10.99 \\
+\textbf{SSK} & \textbf{raw strings, best cell ($p=3,\lambda_d=0.7$)} &    & $10^{-2}$ & \textbf{4.69} \\
+\midrule
+\multicolumn{4}{l}{irreducible noise floor $\sigma^2 = 0.3^2$}      & 0.09 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Robustness sweep ($p \in \{2,3,4,5\}$, $\lambda_{\mathrm{decay}} \in \{0.3, 0.5, 0.7\}$).} The heatmap in Fig.~\ref{fig:ssk} shows the result is robust across hyperparameters: \textbf{11 of 12 cells} beat the strongest table baseline (18.35), and only the single worst cell ($p=2, \lambda_d=0.3$, MSE $19.25$) is comparable to it. MSE improves monotonically with $\lambda_{\mathrm{decay}}$ at every $p$ (larger decay gives slower weight falloff and so better captures span 4 to 8 occurrences), and the optimum is at $p=3$ (matching the pattern length used in the target) with $\lambda_d = 0.7$ (largest tested decay).
+
+\textbf{Strengthened baselines.} The natural attribute representations were stacked in increasing flexibility: bag-of-3-mers linear (21.75), then bag-of-$k$-mers for $k\in\{2,3,4\}$ concatenated (18.35, 5.25$\times$ more features), then bag-of-3-mers with a polynomial kernel of degree 2 (20.35, adding implicit pairwise count interactions). None goes below $\approx 18$, while SSK at its best cell achieves $4.69$. Table-based predictors can only capture the contiguous span-3 component of the target signal; the span 4 to 8 component is out of reach for any function of $k$-mer counts.
+
+\textbf{Conclusion.} Explicit string-structure modelling reduces MSE by $\approx 4\times$ versus the best feasible table (4.69 vs 18.35). The same KRR machinery from Parts 1 and 2 is reused; only the kernel object changes.
+
+\end{document}
